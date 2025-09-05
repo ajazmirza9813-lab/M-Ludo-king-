@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M Ludo King — Offline 4 Players (Single HTML)</title>
+<style>
+  :root{
+    --bg:#c0392b; --black:#000; --white:#fff;
+    --red:#e74c3c; --blue:#2980b9; --green:#27ae60; --yellow:#f1c40f;
+    --safe:#2ecc71;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:#fff}
+  .wrap{max-width:900px;margin:0 auto;padding:14px}
+  h1{margin:0 0 8px;text-align:center}
+  .sub{opacity:.95;text-align:center;margin:0 0 10px}
+  /* Board */
+  #board{
+    width:600px;height:600px;margin:12px auto;background:#fff;border:6px solid #000;border-radius:12px;
+    display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr);position:relative;
+    box-shadow:0 12px 36px #0006
+  }
+  .cell{border:1px solid #0001}
+  .home-red{background:var(--red)} .home-blue{background:var(--blue)}
+  .home-green{background:var(--green)} .home-yellow{background:var(--yellow)}
+  .path{background:#fff}
+  .center{background:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;color:#000}
+  .safe{outline:3px solid var(--safe);outline-offset:-2px}
+  /* Pawns layer */
+  #stage{position:absolute;inset:0;pointer-events:none}
+  .pawn{width:24px;height:24px;border-radius:50%;position:absolute;transform:translate(-50%,-50%);
+        display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;border:2px solid #000a}
+  .red{background:var(--red)} .blue{background:var(--blue)} .green{background:var(--green)} .yellow{background:var(--yellow)}
+  .pawn.highlight{box-shadow:0 0 0 5px #0002, 0 0 12px 4px #0007}
+  /* Controls */
+  .panel{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .btn{background:#fff;color:#000;border:2px solid #000;border-radius:12px;padding:10px 16px;font-size:16px;cursor:pointer;box-shadow:0 3px 0 #000}
+  .btn:active{transform:translateY(1px);box-shadow:0 2px 0 #000}
+  #dice{width:64px;height:64px;display:grid;place-items:center;background:#fff;color:#000;border:3px solid #000;border-radius:12px;font-weight:900;font-size:28px}
+  .players{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:6px 0}
+  .players label{background:#0002;border:1px solid #fff3;padding:6px 10px;border-radius:10px;display:flex;align-items:center;gap:6px}
+  #turn{font-weight:700;text-align:center;margin:8px 0}
+  .note{font-size:13px;opacity:.95;text-align:center;margin-top:6px}
+  /* Toast */
+  .toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 14px;border-radius:12px;border:2px solid #fff;display:none;font-weight:700;z-index:99}
+  @media(max-width:740px){#board{width:330px;height:330px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎲 M Ludo King — Offline (4 Players)</h1>
+  <p class="sub">Rule: 6 पर गोटी बाहर • 6 पर extra turn • Start tiles Safe • सामने उतरने पर Kill • Center पहुँचे = Finish</p>
+
+  <div id="board"><div id="stage"></div></div>
+
+  <div class="players">
+    <label><input type="checkbox" id="pRed" checked> 🔴 Red</label>
+    <label><input type="checkbox" id="pBlue" checked> 🔵 Blue</label>
+    <label><input type="checkbox" id="pGreen" checked> 🟢 Green</label>
+    <label><input type="checkbox" id="pYellow" checked> 🟡 Yellow</label>
+  </div>
+
+  <div class="panel">
+    <button class="btn" id="newBtn">🔄 New Game</button>
+    <button class="btn" id="rollBtn">🎲 Roll</button>
+    <div id="dice">🎲</div>
+  </div>
+  <p id="turn">🔴 Red की बारी…</p>
+  <p class="note">Tip: Roll के बाद किसी highlighted गोटी पर tap/click करके move करो।</p>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ====== Helpers ====== */
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.display='block';
+  clearTimeout(showToast._id);
+  showToast._id=setTimeout(()=>t.style.display='none',1400);
+}
+const COLORS=['red','blue','green','yellow'];
+
+/* ====== Build 15x15 Mini-Ludo Board (cross) ====== */
+const N=15;
+const board=document.getElementById('board');
+const stage=document.getElementById('stage');
+function idx(r,c){return r*N+c;}
+function buildBoard(){
+  [...board.querySelectorAll('.cell,.center')].forEach(n=>n.remove());
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const d=document.createElement('div'); d.className='cell';
+      // homes: four corners 6x6
+      if(r<6&&c<6) d.classList.add('home-red');
+      else if(r<6&&c>8) d.classList.add('home-green');
+      else if(r>8&&c<6) d.classList.add('home-blue');
+      else if(r>8&&c>8) d.classList.add('home-yellow');
+      // cross paths
+      else if(c>=6&&c<=8 || r>=6&&r<=8) d.classList.add('path');
+      // center
+      if(r>=6&&r<=8 && c>=6&&c<=8){ d.className='cell center'; d.textContent='★'; }
+      board.insertBefore(d, stage);
+    }
+  }
+  // Safe start tiles
+  safeMark(0,7); safeMark(14,7); safeMark(7,0); safeMark(7,14);
+}
+function safeMark(r,c){ board.children[idx(r,c)].classList.add('safe'); }
+buildBoard();
+
+/* ====== Paths (simple straight to center) ====== */
+const PATHS={
+  red:   Array.from({length:8}, (_,i)=>({r:i, c:7})),           // from (0,7) down to (7,7)
+  blue:  Array.from({length:8}, (_,i)=>({r:14-i, c:7})),        // from (14,7) up to (7,7)
+  green: Array.from({length:8}, (_,i)=>({r:7, c:14-i})),        // from (7,14) left to (7,7)
+  yellow:Array.from({length:8}, (_,i)=>({r:7, c:i}))            // from (7,0) right to (7,7)
+};
+const START={ red:{r:0,c:7}, blue:{r:14,c:7}, green:{r:7,c:14}, yellow:{r:7,c:0} };
+
+/* ====== Pawns creation & placement helpers ====== */
+function place(el,r,c){
+  const W=board.clientWidth, H=board.clientHeight;
+  el.style.left=((c+0.5)/N*W)+'px';
+  el.style.top =((r+0.5)/N*H)+'px';
+}
+function makePawn(color, label){
+  const e=document.createElement('div');
+  e.className='pawn '+color; e.textContent=label; stage.appendChild(e);
+  e.style.pointerEvents='auto';
+  return e;
+}
+function homeSlot(color, i){
+  // 4 slots inside each home quadrant
+  if(color==='red')   return [{r:2,c:2},{r:2,c:4},{r:4,c:2},{r:4,c:4}][i];
+  if(color==='blue')  return [{r:10,c:2},{r:10,c:4},{r:12,c:2},{r:12,c:4}][i];
+  if(color==='green') return [{r:2,c:10},{r:2,c:12},{r:4,c:10},{r:4,c:12}][i];
+  if(color==='yellow')return [{r:10,c:10},{r:10,c:12},{r:12,c:10},{r:12,c:12}][i];
+}
+
+/* ====== Game State ====== */
+let state;
+const diceEl=document.getElementById('dice');
+const turnEl=document.getElementById('turn');
+const rollBtn=document.getElementById('rollBtn');
+const newBtn=document.getElementById('newBtn');
+
+function init(){
+  stage.innerHTML='';
+  const enabled = {
+    red: document.getElementById('pRed').checked,
+    blue: document.getElementById('pBlue').checked,
+    green: document.getElementById('pGreen').checked,
+    yellow: document.getElementById('pYellow').checked
+  };
+  const order = COLORS.filter(c=>enabled[c]);
+  if(order.length<2){ enabled.red=true; enabled.blue=true; order.push('red','blue'); }
+  state={
+    order, turnIndex:0, dice:0, awaitingClick:false,
+    players: {}
+  };
+  for(const c of COLORS){
+    const pawns = [];
+    for(let i=0;i<4;i++){
+      const el=makePawn(c, String(i+1));
+      const slot=homeSlot(c,i); place(el,slot.r,slot.c);
+      pawns.push({pos:-1, finished:false, el});
+    }
+    state.players[c]={enabled: enabled[c], pawns, finishedCount:0};
+  }
+  diceEl.textContent='🎲';
+  turnEl.textContent= labelTurn();
+  clearHighlights();
+}
+function labelTurn(){
+  const c=state.order[state.turnIndex];
+  const emoji = c==='red'?'🔴':c==='blue'?'🔵':c==='green'?'🟢':'🟡';
+  return `${emoji} ${c[0].toUpperCase()+c.slice(1)} की बारी…`;
+}
+init();
+
+function nextTurn(extra){
+  if(extra) return; // same player again
+  state.turnIndex = (state.turnIndex+1) % state.order.length;
+  turnEl.textContent=labelTurn();
+}
+
+function clearHighlights(){
+  stage.querySelectorAll('.pawn.highlight').forEach(p=>p.classList.remove('highlight'));
+  // remove old handlers
+  for(const c of COLORS){
+    for(const p of state.players[c].pawns){
+      p.el.onclick=null;
+    }
+  }
+}
+
+/* ====== Rules helpers ====== */
+function canSpawn(c){ const p=state.players[c]; return p.pawns.some(x=>x.pos===-1); }
+function movablePawns(c){
+  const p=state.players[c]; const v=state.dice;
+  const arr=[];
+  for(const pawn of p.pawns){
+    if(pawn.finished) continue;
+    if(pawn.pos===-1 && v===6){ arr.push(pawn); }
+    else if(pawn.pos>=0){
+      let target=pawn.pos+v;
+      if(target>PATHS[c].length-1) continue; // can't move beyond center
+      arr.push(pawn);
+    }
+  }
+  return arr;
+}
+function cellOf(c, pos){
+  if(pos===-1) return null;
+  return PATHS[c][pos];
+}
+function sameTile(a,b){ return a && b && a.r===b.r && a.c===b.c; }
+function isSafeTile(tile){
+  if(!tile) return false;
+  return (START.red.r===tile.r && START.red.c===tile.c)
+      || (START.blue.r===tile.r && START.blue.c===tile.c)
+      || (START.green.r===tile.r && START.green.c===tile.c)
+      || (START.yellow.r===tile.r && START.yellow.c===tile.c);
+}
+
+/* ====== Kill check ====== */
+function killIfNeeded(moverColor, tile){
+  for(const c of COLORS){
+    if(c===moverColor) continue;
+    const P=state.players[c];
+    for(const pawn of P.pawns){
+      if(pawn.pos<0 || pawn.finished) continue;
+      const eTile=cellOf(c,pawn.pos);
+      if(sameTile(tile,eTile) && !isSafeTile(tile)){
+        // send enemy home
+        pawn.pos=-1; pawn.finished=false;
+        // place to home slot closest to top-left within that quadrant
+        const idx=parseInt(pawn.el.textContent,10)-1;
+        const slot=homeSlot(c,idx); place(pawn.el,slot.r,slot.c);
+        showToast("काट दिया!");
+      }
+    }
+  }
+}
+
+/* ====== Apply a move for selected pawn ====== */
+function applyMove(color, pawn){
+  const v=state.dice;
+  if(pawn.pos===-1){
+    // spawn to start
+    pawn.pos=0;
+    const t=PATHS[color][0]; place(pawn.el,t.r,t.c);
+    showToast("गोटी बाहर!");
+    killIfNeeded(color, t);
+    const extra = (v===6);
+    checkFinish(color, pawn);
+    nextTurn(extra);
+    return;
+  }
+  // advance
+  let target=pawn.pos+v;
+  if(target>PATHS[color].length-1) return; // invalid
+  pawn.pos=target;
+  const t=PATHS[color][pawn.pos]; place(pawn.el,t.r,t.c);
+  killIfNeeded(color, t);
+  const extra=(v===6);
+  checkFinish(color, pawn);
+  nextTurn(extra);
+  checkWin();
+}
+
+/* ====== Finish & Win ====== */
+function checkFinish(color, pawn){
+  if(pawn.pos===PATHS[color].length-1){
+    pawn.finished=true;
+    state.players[color].finishedCount++;
+    showToast("फिनिश!");
+  }
+}
+function checkWin(){
+  for(const c of state.order){
+    if(state.players[c].finishedCount===4){
+      alert(`🎉 ${c.toUpperCase()} जीत गया!`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ====== Dice & Interaction ====== */
+function rollDice(){
+  const v=Math.floor(Math.random()*6)+1;
+  state.dice=v; diceEl.textContent=String(v);
+  clearHighlights();
+  const c=state.order[state.turnIndex];
+  const mov=movablePawns(c);
+  if(mov.length===0){
+    showToast("कोई चाल नहीं!");
+    nextTurn(false);
+    return;
+  }
+  // highlight pawns and attach click
+  mov.forEach(p=>{
+    p.el.classList.add('highlight');
+    p.el.onclick=()=>{
+      clearHighlights();
+      applyMove(c,p);
+    };
+  });
+}
+
+/* ====== Buttons ====== */
+rollBtn.onclick=()=>{ rollDice(); };
+newBtn.onclick=()=>{ init(); };
+document.getElementById('pRed').onchange=init;
+document.getElementById('pBlue').onchange=init;
+document.getElementById('pGreen').onchange=init;
+document.getElementById('pYellow').onchange=init;
+
+/* initial layout measurement */
+place({style:{}},0,0);
+</script>
+</body>
+</html>
